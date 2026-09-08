@@ -14,10 +14,197 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      periods: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          order: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          order?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          order?: number
+        }
+        Relationships: []
+      }
+      progress: {
+        Row: {
+          completed: boolean
+          completed_at: string | null
+          created_at: string
+          id: string
+          updated_at: string
+          week_content_id: string
+        }
+        Insert: {
+          completed?: boolean
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          updated_at?: string
+          week_content_id: string
+        }
+        Update: {
+          completed?: boolean
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          updated_at?: string
+          week_content_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "progress_week_content_id_fkey"
+            columns: ["week_content_id"]
+            isOneToOne: true
+            referencedRelation: "week_content"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      subjects: {
+        Row: {
+          color: string
+          created_at: string
+          icon: string
+          id: string
+          name: string
+          order: number
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          icon?: string
+          id?: string
+          name: string
+          order?: number
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          icon?: string
+          id?: string
+          name?: string
+          order?: number
+        }
+        Relationships: []
+      }
+      week_content: {
+        Row: {
+          created_at: string
+          extracted_text: string | null
+          id: string
+          pdf_filename: string | null
+          pdf_url: string | null
+          subject_id: string
+          updated_at: string
+          week_id: string
+          youtube_links: Json
+        }
+        Insert: {
+          created_at?: string
+          extracted_text?: string | null
+          id?: string
+          pdf_filename?: string | null
+          pdf_url?: string | null
+          subject_id: string
+          updated_at?: string
+          week_id: string
+          youtube_links?: Json
+        }
+        Update: {
+          created_at?: string
+          extracted_text?: string | null
+          id?: string
+          pdf_filename?: string | null
+          pdf_url?: string | null
+          subject_id?: string
+          updated_at?: string
+          week_id?: string
+          youtube_links?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "week_content_subject_id_fkey"
+            columns: ["subject_id"]
+            isOneToOne: false
+            referencedRelation: "subject_progress"
+            referencedColumns: ["subject_id"]
+          },
+          {
+            foreignKeyName: "week_content_subject_id_fkey"
+            columns: ["subject_id"]
+            isOneToOne: false
+            referencedRelation: "subjects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "week_content_week_id_fkey"
+            columns: ["week_id"]
+            isOneToOne: false
+            referencedRelation: "weeks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      weeks: {
+        Row: {
+          created_at: string
+          end_date: string | null
+          id: string
+          label: string
+          order: number
+          period_id: string
+          start_date: string | null
+        }
+        Insert: {
+          created_at?: string
+          end_date?: string | null
+          id?: string
+          label: string
+          order?: number
+          period_id: string
+          start_date?: string | null
+        }
+        Update: {
+          created_at?: string
+          end_date?: string | null
+          id?: string
+          label?: string
+          order?: number
+          period_id?: string
+          start_date?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "weeks_period_id_fkey"
+            columns: ["period_id"]
+            isOneToOne: false
+            referencedRelation: "periods"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
-      [_ in never]: never
+      subject_progress: {
+        Row: {
+          name: string | null
+          subject_id: string | null
+          total_weeks: number | null
+          weeks_completed: number | null
+          weeks_with_content: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       [_ in never]: never
