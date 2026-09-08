@@ -2,7 +2,6 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { SubjectIcon } from "@/components/SubjectIcon";
 import {
-  contentQuery,
   progressQuery,
   subjectsQuery,
   weeksQuery,
