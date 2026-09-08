@@ -1,0 +1,196 @@
+import { lazy, Suspense, useEffect, useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, ArrowRight, Check, Loader2, PartyPopper } from "lucide-react";
+import { VideoGrid } from "@/components/VideoGrid";
+import {
+  contentQuery,
+  orderedWeeks,
+  periodsQuery,
+  progressQuery,
+  resolvePdfUrl,
+  setCompleted,
+  subjectsQuery,
+  weeksQuery,
+} from "@/lib/school";
+
+const PdfViewer = lazy(() => import("@/components/PdfViewer"));
+
+export const Route = createFileRoute("/materia/$subjectId/semana/$weekId")({
+  head: () => ({
+    meta: [
+      { title: "Semana — Mi Cuaderno" },
+      {
+        name: "description",
+        content: "Lee el documento de la semana, mira los videos y marca tu avance.",
+      },
+      { property: "og:title", content: "Semana — Mi Cuaderno" },
+      {
+        property: "og:description",
+        content: "Lee el documento de la semana, mira los videos y marca tu avance.",
+      },
+    ],
+  }),
+  component: WeekPage,
+});
+
+function WeekPage() {
+  const { subjectId, weekId } = Route.useParams();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+
+  const subjects = useQuery(subjectsQuery);
+  const periods = useQuery(periodsQuery);
+  const weeks = useQuery(weeksQuery);
+  const contents = useQuery(contentQuery(subjectId));
+  const progress = useQuery(progressQuery);
+
+  const subject = subjects.data?.find((s) => s.id === subjectId);
+  const week = weeks.data?.find((w) => w.id === weekId);
+  const content = contents.data?.find((c) => c.week_id === weekId);
+  const done =
+    !!content &&
+    !!progress.data?.find((p) => p.week_content_id === content.id && p.completed);
+  const color = subject?.color ?? "#6366f1";
+
+  const flat = orderedWeeks(periods.data ?? [], weeks.data ?? []);
+  const idx = flat.findIndex((w) => w.id === weekId);
+  const prev = idx > 0 ? flat[idx - 1] : undefined;
+  const next = idx >= 0 && idx < flat.length - 1 ? flat[idx + 1] : undefined;
+
+  const [pdfSrc, setPdfSrc] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const [cheer, setCheer] = useState(false);
+
+  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    let alive = true;
+    setPdfSrc(null);
+    if (content?.pdf_url) {
+      resolvePdfUrl(content.pdf_url).then((u) => alive && setPdfSrc(u));
+    }
+    return () => {
+      alive = false;
+    };
+  }, [content?.pdf_url]);
+
+  const toggle = useMutation({
+    mutationFn: async () => {
+      if (!content) return;
+      await setCompleted(content.id, !done);
+    },
+    onSuccess: () => {
+      if (!done) {
+        setCheer(true);
+        setTimeout(() => setCheer(false), 1800);
+      }
+      qc.invalidateQueries({ queryKey: ["progress"] });
+    },
+  });
+
+  const videos = content?.youtube_links ?? [];
+
+  return (
+    <main className="mx-auto w-full max-w-3xl px-4 pb-20 pt-6">
+      <Link
+        to="/materia/$subjectId"
+        params={{ subjectId }}
+        className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="size-4" /> {subject?.name ?? "Materia"}
+      </Link>
+
+      <h1 className="font-display text-3xl leading-tight sm:text-4xl" style={{ color }}>
+        {week?.label ?? "…"}
+      </h1>
+
+      <section className="mt-6">
+        {content?.pdf_url ? (
+          pdfSrc && mounted ? (
+            <Suspense
+              fallback={
+                <div className="flex h-72 items-center justify-center rounded-3xl bg-muted">
+                  <Loader2 className="size-8 animate-spin text-muted-foreground" />
+                </div>
+              }
+            >
+              <PdfViewer url={pdfSrc} />
+            </Suspense>
+          ) : (
+            <div className="flex h-72 items-center justify-center rounded-3xl bg-muted">
+              <Loader2 className="size-8 animate-spin text-muted-foreground" />
+            </div>
+          )
+        ) : (
+          <p className="rounded-3xl border-2 border-dashed border-border p-8 text-center text-muted-foreground">
+            Todavía no hay documento para esta semana.
+          </p>
+        )}
+      </section>
+
+      {videos.length > 0 && (
+        <section className="mt-10">
+          <h2 className="mb-4 font-display text-2xl">Videos de esta semana</h2>
+          <VideoGrid videos={videos} />
+        </section>
+      )}
+
+      {content && (
+        <section className="mt-10">
+          <button
+            onClick={() => toggle.mutate()}
+            disabled={toggle.isPending}
+            className="flex w-full items-center justify-center gap-3 rounded-3xl border-4 px-6 py-6 text-xl font-bold transition-transform active:scale-[0.98]"
+            style={{
+              borderColor: done ? "#16a34a" : color,
+              backgroundColor: done ? "#16a34a" : "transparent",
+              color: done ? "#fff" : color,
+            }}
+          >
+            <span
+              className="flex size-9 items-center justify-center rounded-full border-2"
+              style={{ borderColor: done ? "#fff" : color }}
+            >
+              {done && <Check className="size-5" />}
+            </span>
+            {done ? "¡Semana completada!" : "Ya completé esta semana"}
+          </button>
+          {cheer && (
+            <p className="mt-3 flex animate-bounce items-center justify-center gap-2 text-lg font-bold text-[#16a34a]">
+              <PartyPopper className="size-6" /> ¡Muy bien!
+            </p>
+          )}
+        </section>
+      )}
+
+      <nav className="mt-10 flex items-center justify-between gap-3">
+        <button
+          disabled={!prev}
+          onClick={() =>
+            prev &&
+            navigate({
+              to: "/materia/$subjectId/semana/$weekId",
+              params: { subjectId, weekId: prev.id },
+            })
+          }
+          className="inline-flex items-center gap-2 rounded-2xl border-2 border-border px-4 py-3 text-sm font-semibold disabled:opacity-40"
+        >
+          <ArrowLeft className="size-4" /> Semana anterior
+        </button>
+        <button
+          disabled={!next}
+          onClick={() =>
+            next &&
+            navigate({
+              to: "/materia/$subjectId/semana/$weekId",
+              params: { subjectId, weekId: next.id },
+            })
+          }
+          className="inline-flex items-center gap-2 rounded-2xl border-2 border-border px-4 py-3 text-sm font-semibold disabled:opacity-40"
+        >
+          Semana siguiente <ArrowRight className="size-4" />
+        </button>
+      </nav>
+    </main>
+  );
+}

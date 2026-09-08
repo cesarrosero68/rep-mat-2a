@@ -1,0 +1,1 @@
+ALTER VIEW public.subject_progress SET (security_invoker = on);
