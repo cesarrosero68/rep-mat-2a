@@ -109,9 +109,17 @@ function AdminUpload() {
         title,
         docs.length,
       );
-      toast.success(
-        `Documento agregado. ${result.youtube_links?.length ?? 0} video(s) detectado(s).`,
-      );
+      if (result.processingError) {
+        toast.warning(`Documento guardado, pero: ${result.processingError}`);
+      } else if (result.skipped_too_large) {
+        toast.warning(
+          "Documento guardado. El PDF es muy pesado para detectar videos automáticamente — agrégalos a mano si tiene alguno.",
+        );
+      } else {
+        toast.success(
+          `Documento agregado. ${result.youtube_links?.length ?? 0} video(s) detectado(s).`,
+        );
+      }
       await refreshDocs();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Error subiendo el archivo.");
