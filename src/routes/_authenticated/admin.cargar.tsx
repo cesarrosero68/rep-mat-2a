@@ -219,7 +219,7 @@ function AdminUpload() {
     }
     if (!isAllowedEmbedUrl(embedUrl)) {
       toast.error(
-        "Ese link no se puede embeber. Usa la URL de 'Incrustar' de Wordwall, Genially, Kahoot o Quizizz (debe empezar con https:// y venir de uno de esos sitios).",
+        "Ese link no se puede embeber. Por ahora solo se admiten Wordwall, Genially, Kahoot, Quizizz y Mathsframe (debe empezar con https:// y venir de uno de esos sitios). Avísame si necesitas agregar otro.",
       );
       return;
     }
@@ -516,8 +516,9 @@ function AdminUpload() {
                 Agregar actividad
               </Button>
               <p className="text-xs text-muted-foreground">
-                Usa el botón "Incrustar" o "Embed" del sitio original y pega aquí solo la URL que
-                aparece dentro de <code>src="..."</code>, no el link normal de la página.
+                Si el sitio tiene un botón "Incrustar" o "Embed", usa esa URL (la que aparece dentro
+                de <code>src="..."</code>). Si no lo tiene, prueba con el link normal de la página —
+                funciona en algunos sitios y no en otros.
               </p>
             </div>
           </section>
