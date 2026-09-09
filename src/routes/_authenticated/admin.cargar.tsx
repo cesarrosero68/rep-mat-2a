@@ -17,6 +17,7 @@ import {
   ensureWeekContent,
   extractYoutubeId,
   MAX_DOCUMENTS_PER_WEEK,
+  MAX_UPLOAD_BYTES,
   updateWeekDocumentTitle,
   uploadAndAddDocument,
 } from "@/lib/admin";
@@ -95,19 +96,25 @@ function AdminUpload() {
       toast.error(`Ya hay ${MAX_DOCUMENTS_PER_WEEK} documentos en esta semana, el máximo.`);
       return;
     }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      toast.error(
+        `El archivo pesa ${(file.size / 1024 / 1024).toFixed(1)}MB. Por ahora el máximo recomendado es ${MAX_UPLOAD_BYTES / 1024 / 1024}MB — comprime el PDF primero.`,
+      );
+      return;
+    }
     const subject = subjects.data?.find((s) => s.id === subjectId);
     try {
       setBusy("Preparando…");
       const weekContentId = existing?.id ?? (await ensureWeekContent(subjectId, weekId));
-      setBusy("Subiendo el documento…");
+      setBusy("Subiendo el documento… (puede tardar un poco con archivos grandes)");
       const title = file.name.replace(/\.pdf$/i, "").slice(0, 60) || "Documento";
-      setBusy("Leyendo el PDF y buscando videos…");
       const result = await uploadAndAddDocument(
         file,
         subject?.name ?? "general",
         weekContentId,
         title,
         docs.length,
+        (phase) => setBusy(phase),
       );
       if (result.processingError) {
         toast.warning(`Documento guardado, pero: ${result.processingError}`);
@@ -357,6 +364,11 @@ function AdminUpload() {
                   {atLimit
                     ? `Ya hay ${MAX_DOCUMENTS_PER_WEEK} documentos, el máximo por semana`
                     : "Arrastra el PDF aquí o haz clic para elegirlo"}
+                  {!atLimit && (
+                    <span className="text-xs text-muted-foreground">
+                      Máximo recomendado: {MAX_UPLOAD_BYTES / 1024 / 1024}MB por archivo
+                    </span>
+                  )}
                 </>
               )}
               <input
