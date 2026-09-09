@@ -74,10 +74,13 @@ function WeekPage() {
   }, [weekId, firstDocId]);
 
   const activeDoc = docs.find((d) => d.id === activeDocId) ?? docs[0];
-  // Compatibilidad: si no hay filas en week_documents todavía (contenido viejo
-  // migrado o sin migrar), cae de vuelta al pdf_url directo en week_content.
-  const activePdfUrl = activeDoc?.pdf_url ?? content?.pdf_url ?? null;
-  const activeVideos = activeDoc?.youtube_links ?? content?.youtube_links ?? [];
+  // Si hay documentos en week_documents, el pdf_url de cada uno manda (puede
+  // ser null a propósito, para un documento que es solo un video). El
+  // contenido viejo en week_content solo se usa como respaldo cuando todavía
+  // no existe ningún documento migrado.
+  const activePdfUrl = docs.length > 0 ? (activeDoc?.pdf_url ?? null) : (content?.pdf_url ?? null);
+  const activeVideos =
+    docs.length > 0 ? (activeDoc?.youtube_links ?? []) : (content?.youtube_links ?? []);
 
   useEffect(() => {
     let alive = true;
