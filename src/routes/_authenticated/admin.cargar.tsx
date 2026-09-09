@@ -1,13 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Trash2, UploadCloud, Youtube } from "lucide-react";
+import { ArrowLeft, GripVertical, Loader2, Trash2, UploadCloud, Youtube } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import PdfViewer from "@/components/PdfViewer";
-import { periodsQuery, resolvePdfUrl, subjectsQuery, weeksQuery } from "@/lib/school";
+import {
+  periodsQuery,
+  resolvePdfUrl,
+  subjectsQuery,
+  weeksQuery,
+  type YoutubeLink,
+} from "@/lib/school";
 import {
   addEmbedDocument,
   addVideoOnlyDocument,
@@ -21,6 +27,10 @@ import {
   isAllowedEmbedUrl,
   MAX_DOCUMENTS_PER_WEEK,
   MAX_UPLOAD_BYTES,
+  removeVideoFromDocument,
+  reorderDocuments,
+  updateEmbedUrl,
+  updateVideoInDocument,
   updateWeekDocumentTitle,
   uploadAndAddDocument,
 } from "@/lib/admin";
@@ -68,6 +78,7 @@ function AdminUpload() {
   const [videoTargetId, setVideoTargetId] = useState<string>("__new__");
   const [embedTitle, setEmbedTitle] = useState("");
   const [embedUrl, setEmbedUrl] = useState("");
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const existing = useMemo(
@@ -267,6 +278,61 @@ function AdminUpload() {
     }
   }
 
+  async function onUpdateEmbedUrl(id: string, url: string) {
+    if (!isAllowedEmbedUrl(url)) return; // no guarda mientras el link no sea válido
+    try {
+      await updateEmbedUrl(id, url);
+      await refreshDocs();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo actualizar el link.");
+    }
+  }
+
+  async function onEditVideo(
+    docId: string,
+    links: YoutubeLink[],
+    index: number,
+    updates: { title?: string | null; video_id?: string },
+  ) {
+    try {
+      await updateVideoInDocument(docId, links, index, updates);
+      await refreshDocs();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo editar el video.");
+    }
+  }
+
+  async function onRemoveVideo(docId: string, links: YoutubeLink[], index: number) {
+    try {
+      await removeVideoFromDocument(docId, links, index);
+      await refreshDocs();
+      toast.success("Video eliminado.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo eliminar el video.");
+    }
+  }
+
+  async function onDropReorder(targetIndex: number) {
+    if (dragIndex === null || dragIndex === targetIndex) {
+      setDragIndex(null);
+      return;
+    }
+    const reordered = [...docs];
+    const [moved] = reordered.splice(dragIndex, 1);
+    if (!moved) {
+      setDragIndex(null);
+      return;
+    }
+    reordered.splice(targetIndex, 0, moved);
+    setDragIndex(null);
+    try {
+      await reorderDocuments(reordered.map((d) => d.id));
+      await refreshDocs();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo reordenar.");
+    }
+  }
+
   async function onTogglePreview(id: string, pdfUrl: string | null) {
     if (previewFor === id) {
       setPreviewFor(null);
@@ -346,10 +412,28 @@ function AdminUpload() {
                 Todavía no hay documentos en esta semana. Agrega el primero abajo.
               </p>
             ) : (
+              <p className="mb-2 text-xs text-muted-foreground">
+                Arrastra ⠿ para cambiar el orden de las pestañas que verá el estudiante.
+              </p>
+            )}
+            {docs.length > 0 && (
               <ul className="space-y-3">
-                {docs.map((d) => (
-                  <li key={d.id} className="rounded-lg border p-3">
+                {docs.map((d, i) => (
+                  <li
+                    key={d.id}
+                    draggable
+                    onDragStart={() => setDragIndex(i)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => onDropReorder(i)}
+                    className={`rounded-lg border p-3 ${dragIndex === i ? "opacity-50" : ""}`}
+                  >
                     <div className="flex items-center gap-3">
+                      <span
+                        className="cursor-grab text-muted-foreground active:cursor-grabbing"
+                        aria-label="Arrastrar para reordenar"
+                      >
+                        <GripVertical className="size-4" />
+                      </span>
                       <Input
                         value={d.title}
                         placeholder="Título del documento (ej. Guía, Actividades)"
@@ -377,11 +461,66 @@ function AdminUpload() {
                         <Trash2 className="size-4" />
                       </Button>
                     </div>
-                    {d.youtube_links && d.youtube_links.length > 0 && (
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        {d.youtube_links.length} video(s) en este documento.
-                      </p>
+
+                    {d.embed_url && (
+                      <Input
+                        defaultValue={d.embed_url}
+                        placeholder="URL de la actividad embebida"
+                        className="mt-2"
+                        onBlur={(e) => {
+                          if (e.target.value !== d.embed_url)
+                            onUpdateEmbedUrl(d.id, e.target.value);
+                        }}
+                      />
                     )}
+
+                    {d.youtube_links && d.youtube_links.length > 0 && (
+                      <ul className="mt-2 space-y-2">
+                        {d.youtube_links.map((link, vi) => (
+                          <li key={vi} className="flex items-center gap-2">
+                            <img
+                              src={`https://img.youtube.com/vi/${link.video_id}/default.jpg`}
+                              alt=""
+                              className="h-9 w-16 rounded object-cover"
+                            />
+                            <Input
+                              defaultValue={link.title ?? ""}
+                              placeholder="Título del video"
+                              className="flex-1"
+                              onBlur={(e) => {
+                                if (e.target.value !== (link.title ?? "")) {
+                                  onEditVideo(d.id, d.youtube_links ?? [], vi, {
+                                    title: e.target.value || null,
+                                  });
+                                }
+                              }}
+                            />
+                            <Input
+                              defaultValue={link.video_id}
+                              placeholder="Link o ID de YouTube"
+                              className="w-40"
+                              onBlur={(e) => {
+                                const newId = extractYoutubeId(e.target.value);
+                                if (newId && newId !== link.video_id) {
+                                  onEditVideo(d.id, d.youtube_links ?? [], vi, {
+                                    video_id: newId,
+                                  });
+                                }
+                              }}
+                            />
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label="Eliminar video"
+                              onClick={() => onRemoveVideo(d.id, d.youtube_links ?? [], vi)}
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
                     {previewFor === d.id && (
                       <div className="mt-3">
                         {previewUrl ? (
