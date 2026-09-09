@@ -156,6 +156,7 @@ const ALLOWED_EMBED_HOSTS = [
   "genially.com",
   "kahoot.it",
   "quizizz.com",
+  "mathsframe.co.uk",
 ];
 
 export function isAllowedEmbedUrl(url: string): boolean {
