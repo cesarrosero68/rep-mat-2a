@@ -8,6 +8,13 @@ type Link = { video_id: string; title: string | null; position_in_doc: number };
 const YT_RE =
   /(?:youtube\.com\/(?:watch\?[^\s"'<>)]*v=|embed\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/g;
 
+// Límite de tamaño para intentar extraer texto/videos. Archivos más grandes
+// igual quedan guardados y visibles para el estudiante, solo no se procesan
+// automáticamente (el admin puede agregar el video a mano).
+const MAX_PROCESS_BYTES = 15 * 1024 * 1024; // 15 MB
+const EXTRACT_TIMEOUT_MS = 20_000;
+const OEMBED_TIMEOUT_MS = 5_000;
+
 function findLinks(text: string): Link[] {
   const seen = new Set<string>();
   const out: Link[] = [];
@@ -20,12 +27,28 @@ function findLinks(text: string): Link[] {
   return out;
 }
 
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Tiempo agotado: ${label}`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
 async function withTitles(links: Link[]): Promise<Link[]> {
   return Promise.all(
     links.map(async (l) => {
       try {
-        const r = await fetch(
-          `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${l.video_id}&format=json`,
+        const r = await withTimeout(
+          fetch(
+            `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${l.video_id}&format=json`,
+          ),
+          OEMBED_TIMEOUT_MS,
+          "oembed",
         );
         if (!r.ok) return l;
         const j = (await r.json()) as { title?: string };
@@ -89,16 +112,28 @@ export const Route = createFileRoute("/api/public/procesar-pdf")({
         }
 
         let text = "";
-        try {
-          const buf = new Uint8Array(await file.arrayBuffer());
-          const doc = await getDocumentProxy(buf);
-          const res = await extractText(doc, { mergePages: true });
-          text = Array.isArray(res.text) ? res.text.join("\n") : res.text;
-        } catch (e) {
-          console.error("[procesar-pdf] extracción falló", e);
+        let skippedTooLarge = false;
+        if (file.size > MAX_PROCESS_BYTES) {
+          skippedTooLarge = true;
+          console.warn(
+            `[procesar-pdf] ${path} pesa ${(file.size / 1024 / 1024).toFixed(1)}MB, se omite extracción automática (límite ${MAX_PROCESS_BYTES / 1024 / 1024}MB).`,
+          );
+        } else {
+          try {
+            const buf = new Uint8Array(await file.arrayBuffer());
+            const doc = await withTimeout(getDocumentProxy(buf), EXTRACT_TIMEOUT_MS, "abrir PDF");
+            const res = await withTimeout(
+              extractText(doc, { mergePages: true }),
+              EXTRACT_TIMEOUT_MS,
+              "extraer texto",
+            );
+            text = Array.isArray(res.text) ? res.text.join("\n") : res.text;
+          } catch (e) {
+            console.error("[procesar-pdf] extracción falló", e);
+          }
         }
 
-        const youtube_links = await withTitles(findLinks(text));
+        const youtube_links = text ? await withTitles(findLinks(text)) : [];
 
         if (body.save && body.subject_id && body.week_id) {
           const { error } = await supabaseAdmin.from("week_content").upsert(
@@ -120,6 +155,7 @@ export const Route = createFileRoute("/api/public/procesar-pdf")({
           extracted_text_length: text.length,
           youtube_links,
           saved: !!body.save,
+          skipped_too_large: skippedTooLarge,
         });
       },
     },
