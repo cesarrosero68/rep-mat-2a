@@ -435,10 +435,14 @@ function AdminUpload() {
                         <GripVertical className="size-4" />
                       </span>
                       <Input
-                        value={d.title}
+                        defaultValue={d.title}
                         placeholder="Título del documento (ej. Guía, Actividades)"
-                        onChange={(e) => onRenameDoc(d.id, e.target.value)}
                         className="flex-1"
+                        onBlur={(e) => {
+                          if (e.target.value !== d.title && e.target.value.trim()) {
+                            onRenameDoc(d.id, e.target.value.trim());
+                          }
+                        }}
                       />
                       <span className="whitespace-nowrap text-xs text-muted-foreground">
                         {d.pdf_filename ?? (d.embed_url ? "Actividad interactiva" : "Solo video")}
