@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import PdfViewer from "@/components/PdfViewer";
 import { periodsQuery, resolvePdfUrl, subjectsQuery, weeksQuery } from "@/lib/school";
 import {
+  addEmbedDocument,
   addVideoOnlyDocument,
   addVideoToDocument,
   adminWeekDocumentsQuery,
@@ -17,6 +18,7 @@ import {
   ensureWeekContent,
   extractYoutubeId,
   imageToPdf,
+  isAllowedEmbedUrl,
   MAX_DOCUMENTS_PER_WEEK,
   MAX_UPLOAD_BYTES,
   updateWeekDocumentTitle,
@@ -64,6 +66,8 @@ function AdminUpload() {
   const [videoTitle, setVideoTitle] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
   const [videoTargetId, setVideoTargetId] = useState<string>("__new__");
+  const [embedTitle, setEmbedTitle] = useState("");
+  const [embedUrl, setEmbedUrl] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const existing = useMemo(
@@ -204,6 +208,41 @@ function AdminUpload() {
     }
   }
 
+  async function onAddEmbed() {
+    if (!subjectId || !weekId) {
+      toast.error("Elige materia y semana primero.");
+      return;
+    }
+    if (atLimit) {
+      toast.error(`Ya hay ${MAX_DOCUMENTS_PER_WEEK} documentos en esta semana, el máximo.`);
+      return;
+    }
+    if (!isAllowedEmbedUrl(embedUrl)) {
+      toast.error(
+        "Ese link no se puede embeber. Usa la URL de 'Incrustar' de Wordwall, Genially, Kahoot o Quizizz (debe empezar con https:// y venir de uno de esos sitios).",
+      );
+      return;
+    }
+    try {
+      setBusy("Agregando actividad…");
+      const weekContentId = existing?.id ?? (await ensureWeekContent(subjectId, weekId));
+      await addEmbedDocument({
+        week_content_id: weekContentId,
+        title: embedTitle.trim() || "Actividad",
+        embed_url: embedUrl.trim(),
+        order: docs.length,
+      });
+      setEmbedTitle("");
+      setEmbedUrl("");
+      toast.success("Actividad agregada.");
+      await refreshDocs();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo agregar la actividad.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function onDeleteDoc(id: string) {
     if (!confirm("¿Eliminar este documento? Esta acción no se puede deshacer.")) return;
     try {
@@ -318,7 +357,7 @@ function AdminUpload() {
                         className="flex-1"
                       />
                       <span className="whitespace-nowrap text-xs text-muted-foreground">
-                        {d.pdf_filename ?? "Solo video"}
+                        {d.pdf_filename ?? (d.embed_url ? "Actividad interactiva" : "Solo video")}
                       </span>
                       {d.pdf_url && (
                         <Button
@@ -449,6 +488,36 @@ function AdminUpload() {
                 {docs.length > 0
                   ? "Elige a qué documento pertenece este video para que se vea junto a su PDF, o crea uno nuevo si es un video suelto."
                   : "Todavía no hay documentos en esta semana, así que el video se guardará como un documento nuevo."}
+              </p>
+            </div>
+          </section>
+
+          <section className="mt-6">
+            <Label className="mb-2 block">Agregar un juego o actividad interactiva</Label>
+            <div className="space-y-2 rounded-lg border p-4">
+              <Input
+                value={embedTitle}
+                placeholder="Título de la actividad (ej. Likes and dislikes)"
+                disabled={atLimit}
+                onChange={(e) => setEmbedTitle(e.target.value)}
+              />
+              <Input
+                value={embedUrl}
+                placeholder="URL de 'Incrustar' (https://wordwall.net/embed/..., Genially, Kahoot, Quizizz)"
+                disabled={atLimit}
+                onChange={(e) => setEmbedUrl(e.target.value)}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={atLimit || !!busy}
+                onClick={onAddEmbed}
+              >
+                Agregar actividad
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Usa el botón "Incrustar" o "Embed" del sitio original y pega aquí solo la URL que
+                aparece dentro de <code>src="..."</code>, no el link normal de la página.
               </p>
             </div>
           </section>
