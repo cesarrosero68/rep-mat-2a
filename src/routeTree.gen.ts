@@ -10,12 +10,42 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
+import { Route as AuthenticatedAdminCargarRouteImport } from './routes/_authenticated/admin.cargar'
+import { Route as ApiPublicProcesarPdfRouteImport } from './routes/api/public/procesar-pdf'
 import { Route as MateriaSubjectIdIndexRouteImport } from './routes/materia.$subjectId.index'
 import { Route as MateriaSubjectIdSemanaWeekIdRouteImport } from './routes/materia.$subjectId.semana.$weekId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
+  id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
+  id: '/admin/',
+  path: '/admin/',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAdminCargarRoute =
+  AuthenticatedAdminCargarRouteImport.update({
+    id: '/admin/cargar',
+    path: '/admin/cargar',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const ApiPublicProcesarPdfRoute = ApiPublicProcesarPdfRouteImport.update({
+  id: '/api/public/procesar-pdf',
+  path: '/api/public/procesar-pdf',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MateriaSubjectIdIndexRoute = MateriaSubjectIdIndexRouteImport.update({
@@ -32,34 +62,69 @@ const MateriaSubjectIdSemanaWeekIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/admin/cargar': typeof AuthenticatedAdminCargarRoute
+  '/api/public/procesar-pdf': typeof ApiPublicProcesarPdfRoute
+  '/admin/': typeof AuthenticatedAdminIndexRoute
   '/materia/$subjectId/': typeof MateriaSubjectIdIndexRoute
   '/materia/$subjectId/semana/$weekId': typeof MateriaSubjectIdSemanaWeekIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/admin/cargar': typeof AuthenticatedAdminCargarRoute
+  '/api/public/procesar-pdf': typeof ApiPublicProcesarPdfRoute
+  '/admin': typeof AuthenticatedAdminIndexRoute
   '/materia/$subjectId': typeof MateriaSubjectIdIndexRoute
   '/materia/$subjectId/semana/$weekId': typeof MateriaSubjectIdSemanaWeekIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/auth': typeof AuthRoute
+  '/_authenticated/admin/cargar': typeof AuthenticatedAdminCargarRoute
+  '/api/public/procesar-pdf': typeof ApiPublicProcesarPdfRoute
+  '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/materia/$subjectId/': typeof MateriaSubjectIdIndexRoute
   '/materia/$subjectId/semana/$weekId': typeof MateriaSubjectIdSemanaWeekIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/materia/$subjectId/' | '/materia/$subjectId/semana/$weekId'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/admin/cargar'
+    | '/api/public/procesar-pdf'
+    | '/admin/'
+    | '/materia/$subjectId/'
+    | '/materia/$subjectId/semana/$weekId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/materia/$subjectId' | '/materia/$subjectId/semana/$weekId'
+  to:
+    | '/'
+    | '/auth'
+    | '/admin/cargar'
+    | '/api/public/procesar-pdf'
+    | '/admin'
+    | '/materia/$subjectId'
+    | '/materia/$subjectId/semana/$weekId'
   id:
     | '__root__'
     | '/'
+    | '/_authenticated'
+    | '/auth'
+    | '/_authenticated/admin/cargar'
+    | '/api/public/procesar-pdf'
+    | '/_authenticated/admin/'
     | '/materia/$subjectId/'
     | '/materia/$subjectId/semana/$weekId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  AuthRoute: typeof AuthRoute
+  ApiPublicProcesarPdfRoute: typeof ApiPublicProcesarPdfRoute
   MateriaSubjectIdIndexRoute: typeof MateriaSubjectIdIndexRoute
   MateriaSubjectIdSemanaWeekIdRoute: typeof MateriaSubjectIdSemanaWeekIdRoute
 }
@@ -71,6 +136,41 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/admin/': {
+      id: '/_authenticated/admin/'
+      path: '/admin'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/admin/cargar': {
+      id: '/_authenticated/admin/cargar'
+      path: '/admin/cargar'
+      fullPath: '/admin/cargar'
+      preLoaderRoute: typeof AuthenticatedAdminCargarRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/api/public/procesar-pdf': {
+      id: '/api/public/procesar-pdf'
+      path: '/api/public/procesar-pdf'
+      fullPath: '/api/public/procesar-pdf'
+      preLoaderRoute: typeof ApiPublicProcesarPdfRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/materia/$subjectId/': {
@@ -90,8 +190,24 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAdminCargarRoute: typeof AuthenticatedAdminCargarRoute
+  AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
+}
+
+const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedAdminCargarRoute: AuthenticatedAdminCargarRoute,
+  AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
+}
+
+const AuthenticatedRouteRouteWithChildren =
+  AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  AuthRoute: AuthRoute,
+  ApiPublicProcesarPdfRoute: ApiPublicProcesarPdfRoute,
   MateriaSubjectIdIndexRoute: MateriaSubjectIdIndexRoute,
   MateriaSubjectIdSemanaWeekIdRoute: MateriaSubjectIdSemanaWeekIdRoute,
 }
