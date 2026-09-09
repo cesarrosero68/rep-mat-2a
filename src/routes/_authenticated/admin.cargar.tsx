@@ -237,7 +237,7 @@ function AdminUpload() {
     }
     if (!isAllowedEmbedUrl(embedUrl)) {
       toast.error(
-        "Ese link no se puede embeber. Por ahora solo se admiten Wordwall, Genially, Kahoot, Quizizz y Mathsframe (debe empezar con https:// y venir de uno de esos sitios). Avísame si necesitas agregar otro.",
+        "Ese link no se puede embeber. Por ahora solo se admiten Wordwall, Genially, Kahoot, Quizizz, Mathsframe y Games to Learn English (debe empezar con https:// y venir de uno de esos sitios). Avísame si necesitas agregar otro.",
       );
       return;
     }
