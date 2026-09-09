@@ -102,6 +102,24 @@ export async function addVideoOnlyDocument(input: {
   });
 }
 
+/** Agrega un video al youtube_links de un documento YA existente (queda junto a su PDF). */
+export async function addVideoToDocument(
+  documentId: string,
+  currentLinks: YoutubeLink[],
+  video_id: string,
+  video_title: string | null,
+) {
+  const links = [
+    ...currentLinks,
+    { video_id, title: video_title, position_in_doc: currentLinks.length + 1 },
+  ];
+  const { error } = await supabase
+    .from("week_documents")
+    .update({ youtube_links: links })
+    .eq("id", documentId);
+  if (error) throw error;
+}
+
 export async function updateWeekDocumentTitle(id: string, title: string) {
   const { error } = await supabase.from("week_documents").update({ title }).eq("id", id);
   if (error) throw error;
