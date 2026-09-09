@@ -130,7 +130,30 @@ export async function deleteWeekDocument(id: string) {
   if (error) throw error;
 }
 
+const UPLOAD_TIMEOUT_MS = 45_000;
+// Supabase recomienda no superar ~6MB con el método de subida estándar (el
+// que usa este formulario); por encima de eso, la subida se vuelve lenta y
+// poco confiable y puede quedarse "colgada" sin devolver ni éxito ni error.
+export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+
+async function raceTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Tiempo agotado: ${label}`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
 export async function uploadPdf(file: File, subjectName: string) {
+  if (file.size > MAX_UPLOAD_BYTES) {
+    throw new Error(
+      `El archivo pesa ${(file.size / 1024 / 1024).toFixed(1)}MB. Por ahora el máximo recomendado es ${MAX_UPLOAD_BYTES / 1024 / 1024}MB — comprime el PDF (por ejemplo con un compresor de PDF en línea) o divídelo en partes más pequeñas.`,
+    );
+  }
   const slug = subjectName
     .toLowerCase()
     .normalize("NFD")
@@ -138,10 +161,26 @@ export async function uploadPdf(file: File, subjectName: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
   const path = `${slug || "general"}/${Date.now()}-${file.name.replace(/[^\w.-]+/g, "_")}`;
-  const { error } = await supabase.storage
-    .from("week-pdfs")
-    .upload(path, file, { contentType: "application/pdf", upsert: true });
-  if (error) throw error;
+  let uploadError: { message: string } | null;
+  try {
+    const { error } = await raceTimeout(
+      supabase.storage
+        .from("week-pdfs")
+        .upload(path, file, { contentType: "application/pdf", upsert: true }),
+      UPLOAD_TIMEOUT_MS,
+      "subir el archivo",
+    );
+    uploadError = error;
+  } catch (e) {
+    throw new Error(
+      e instanceof Error && e.message.startsWith("Tiempo agotado")
+        ? "La subida tardó demasiado y se canceló. Intenta con un PDF más liviano (comprímelo primero)."
+        : e instanceof Error
+          ? e.message
+          : "Error subiendo el archivo.",
+    );
+  }
+  if (uploadError) throw uploadError;
   return path;
 }
 
@@ -194,8 +233,10 @@ export async function uploadAndAddDocument(
   weekContentId: string,
   title: string,
   currentCount: number,
+  onPhase?: (phase: string) => void,
 ) {
   const path = await uploadPdf(file, subjectName);
+  onPhase?.("Leyendo el PDF y buscando videos…");
   let result: {
     youtube_links?: YoutubeLink[];
     extracted_text_length?: number;
