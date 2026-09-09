@@ -75,13 +75,31 @@ export async function ensureWeekContent(subjectId: string, weekId: string): Prom
 export async function addWeekDocument(input: {
   week_content_id: string;
   title: string;
-  pdf_url: string;
-  pdf_filename: string;
+  pdf_url?: string | null;
+  pdf_filename?: string | null;
   youtube_links: YoutubeLink[];
   order: number;
 }) {
   const { error } = await supabase.from("week_documents").insert(input);
   if (error) throw error;
+}
+
+/** Agrega un documento que es solo un video de YouTube, sin PDF. */
+export async function addVideoOnlyDocument(input: {
+  week_content_id: string;
+  title: string;
+  video_id: string;
+  video_title: string | null;
+  order: number;
+}) {
+  await addWeekDocument({
+    week_content_id: input.week_content_id,
+    title: input.title,
+    pdf_url: null,
+    pdf_filename: null,
+    youtube_links: [{ video_id: input.video_id, title: input.video_title, position_in_doc: 1 }],
+    order: input.order,
+  });
 }
 
 export async function updateWeekDocumentTitle(id: string, title: string) {
@@ -163,4 +181,14 @@ export async function saveWeekContent(input: {
     .from("week_content")
     .upsert(input, { onConflict: "subject_id,week_id" });
   if (error) throw error;
+}
+
+/** Acepta una URL completa de YouTube o ya el ID de 11 caracteres. */
+export function extractYoutubeId(input: string): string | null {
+  const m = input.match(
+    /(?:youtube\.com\/(?:watch\?[^\s"'<>)]*v=|embed\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/,
+  );
+  if (m) return m[1] ?? null;
+  const trimmed = input.trim();
+  return /^[A-Za-z0-9_-]{11}$/.test(trimmed) ? trimmed : null;
 }
