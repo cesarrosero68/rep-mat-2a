@@ -40,6 +40,7 @@ export type WeekDocument = {
   title: string;
   pdf_url: string | null;
   pdf_filename: string | null;
+  embed_url: string | null;
   youtube_links: YoutubeLink[] | null;
   order: number;
 };
@@ -101,7 +102,7 @@ export const weekDocumentsQuery = (weekContentId: string | undefined) => ({
     if (!weekContentId) return [];
     const { data, error } = await supabase
       .from("week_documents")
-      .select("id,week_content_id,title,pdf_url,pdf_filename,youtube_links,order")
+      .select("id,week_content_id,title,pdf_url,pdf_filename,embed_url,youtube_links,order")
       .eq("week_content_id", weekContentId)
       .order("order");
     if (error) throw error;
