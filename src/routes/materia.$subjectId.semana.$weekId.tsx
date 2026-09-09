@@ -74,11 +74,12 @@ function WeekPage() {
   }, [weekId, firstDocId]);
 
   const activeDoc = docs.find((d) => d.id === activeDocId) ?? docs[0];
-  // Si hay documentos en week_documents, el pdf_url de cada uno manda (puede
-  // ser null a propósito, para un documento que es solo un video). El
-  // contenido viejo en week_content solo se usa como respaldo cuando todavía
-  // no existe ningún documento migrado.
+  // Si hay documentos en week_documents, el pdf_url/embed_url de cada uno
+  // manda (pueden ser null a propósito, para un documento que es solo un
+  // video o una actividad embebida). El contenido viejo en week_content solo
+  // se usa como respaldo cuando todavía no existe ningún documento migrado.
   const activePdfUrl = docs.length > 0 ? (activeDoc?.pdf_url ?? null) : (content?.pdf_url ?? null);
+  const activeEmbedUrl = docs.length > 0 ? (activeDoc?.embed_url ?? null) : null;
   const activeVideos =
     docs.length > 0 ? (activeDoc?.youtube_links ?? []) : (content?.youtube_links ?? []);
 
@@ -146,7 +147,17 @@ function WeekPage() {
       )}
 
       <section className="mt-6">
-        {activePdfUrl ? (
+        {activeEmbedUrl ? (
+          <div className="overflow-hidden rounded-3xl border-4" style={{ borderColor: color }}>
+            <iframe
+              src={activeEmbedUrl}
+              title={activeDoc?.title ?? "Actividad interactiva"}
+              className="aspect-[4/3] w-full sm:aspect-video"
+              allow="fullscreen *"
+              allowFullScreen
+            />
+          </div>
+        ) : activePdfUrl ? (
           pdfSrc && mounted ? (
             <Suspense
               fallback={
