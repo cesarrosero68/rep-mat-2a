@@ -34,6 +34,16 @@ export type WeekContent = {
   youtube_links: YoutubeLink[] | null;
 };
 
+export type WeekDocument = {
+  id: string;
+  week_content_id: string;
+  title: string;
+  pdf_url: string | null;
+  pdf_filename: string | null;
+  youtube_links: YoutubeLink[] | null;
+  order: number;
+};
+
 export type ProgressRow = {
   id: string;
   week_content_id: string;
@@ -55,10 +65,7 @@ export const subjectsQuery = {
 export const periodsQuery = {
   queryKey: ["periods"],
   queryFn: async (): Promise<Period[]> => {
-    const { data, error } = await supabase
-      .from("periods")
-      .select("id,name,order")
-      .order("order");
+    const { data, error } = await supabase.from("periods").select("id,name,order").order("order");
     if (error) throw error;
     return (data ?? []) as Period[];
   },
@@ -88,12 +95,25 @@ export const contentQuery = (subjectId: string) => ({
   },
 });
 
+export const weekDocumentsQuery = (weekContentId: string | undefined) => ({
+  queryKey: ["week_documents", weekContentId],
+  queryFn: async (): Promise<WeekDocument[]> => {
+    if (!weekContentId) return [];
+    const { data, error } = await supabase
+      .from("week_documents")
+      .select("id,week_content_id,title,pdf_url,pdf_filename,youtube_links,order")
+      .eq("week_content_id", weekContentId)
+      .order("order");
+    if (error) throw error;
+    return (data ?? []) as WeekDocument[];
+  },
+  enabled: !!weekContentId,
+});
+
 export const progressQuery = {
   queryKey: ["progress"],
   queryFn: async (): Promise<ProgressRow[]> => {
-    const { data, error } = await supabase
-      .from("progress")
-      .select("id,week_content_id,completed");
+    const { data, error } = await supabase.from("progress").select("id,week_content_id,completed");
     if (error) throw error;
     return (data ?? []) as ProgressRow[];
   },
@@ -102,10 +122,7 @@ export const progressQuery = {
 export async function setCompleted(weekContentId: string, completed: boolean) {
   const { error } = await supabase
     .from("progress")
-    .upsert(
-      { week_content_id: weekContentId, completed },
-      { onConflict: "week_content_id" },
-    );
+    .upsert({ week_content_id: weekContentId, completed }, { onConflict: "week_content_id" });
   if (error) throw error;
 }
 
@@ -124,8 +141,6 @@ export async function resolvePdfUrl(pdfUrl: string): Promise<string | null> {
 export function orderedWeeks(periods: Period[], weeks: Week[]): Week[] {
   const rank = new Map(periods.map((p) => [p.id, p.order]));
   return [...weeks].sort(
-    (a, b) =>
-      (rank.get(a.period_id) ?? 0) - (rank.get(b.period_id) ?? 0) ||
-      a.order - b.order,
+    (a, b) => (rank.get(a.period_id) ?? 0) - (rank.get(b.period_id) ?? 0) || a.order - b.order,
   );
 }
