@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, GripVertical, Loader2, Trash2, UploadCloud, Youtube } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  Trash2,
+  UploadCloud,
+  Youtube,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,7 +86,6 @@ function AdminUpload() {
   const [videoTargetId, setVideoTargetId] = useState<string>("__new__");
   const [embedTitle, setEmbedTitle] = useState("");
   const [embedUrl, setEmbedUrl] = useState("");
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const existing = useMemo(
@@ -312,19 +319,13 @@ function AdminUpload() {
     }
   }
 
-  async function onDropReorder(targetIndex: number) {
-    if (dragIndex === null || dragIndex === targetIndex) {
-      setDragIndex(null);
-      return;
-    }
+  async function onMoveDoc(index: number, direction: -1 | 1) {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= docs.length) return;
     const reordered = [...docs];
-    const [moved] = reordered.splice(dragIndex, 1);
-    if (!moved) {
-      setDragIndex(null);
-      return;
-    }
-    reordered.splice(targetIndex, 0, moved);
-    setDragIndex(null);
+    const temp = reordered[index]!;
+    reordered[index] = reordered[targetIndex]!;
+    reordered[targetIndex] = temp;
     try {
       await reorderDocuments(reordered.map((d) => d.id));
       await refreshDocs();
@@ -413,27 +414,38 @@ function AdminUpload() {
               </p>
             ) : (
               <p className="mb-2 text-xs text-muted-foreground">
-                Arrastra ⠿ para cambiar el orden de las pestañas que verá el estudiante.
+                Usa las flechas ↑↓ para cambiar el orden de las pestañas que verá el estudiante.
               </p>
             )}
             {docs.length > 0 && (
               <ul className="space-y-3">
                 {docs.map((d, i) => (
-                  <li
-                    key={d.id}
-                    draggable
-                    onDragStart={() => setDragIndex(i)}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={() => onDropReorder(i)}
-                    className={`rounded-lg border p-3 ${dragIndex === i ? "opacity-50" : ""}`}
-                  >
+                  <li key={d.id} className="rounded-lg border p-3">
                     <div className="flex items-center gap-3">
-                      <span
-                        className="cursor-grab text-muted-foreground active:cursor-grabbing"
-                        aria-label="Arrastrar para reordenar"
-                      >
-                        <GripVertical className="size-4" />
-                      </span>
+                      <div className="flex flex-col">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-6"
+                          aria-label="Subir"
+                          disabled={i === 0}
+                          onClick={() => onMoveDoc(i, -1)}
+                        >
+                          <ChevronUp className="size-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-6"
+                          aria-label="Bajar"
+                          disabled={i === docs.length - 1}
+                          onClick={() => onMoveDoc(i, 1)}
+                        >
+                          <ChevronDown className="size-4" />
+                        </Button>
+                      </div>
                       <Input
                         defaultValue={d.title}
                         placeholder="Título del documento (ej. Guía, Actividades)"
