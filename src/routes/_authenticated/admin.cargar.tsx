@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Trash2, UploadCloud } from "lucide-react";
+import { ArrowLeft, Loader2, Trash2, UploadCloud, Youtube } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,10 +9,12 @@ import { Label } from "@/components/ui/label";
 import PdfViewer from "@/components/PdfViewer";
 import { periodsQuery, resolvePdfUrl, subjectsQuery, weeksQuery } from "@/lib/school";
 import {
+  addVideoOnlyDocument,
   adminWeekDocumentsQuery,
   allContentQuery,
   deleteWeekDocument,
   ensureWeekContent,
+  extractYoutubeId,
   MAX_DOCUMENTS_PER_WEEK,
   updateWeekDocumentTitle,
   uploadAndAddDocument,
@@ -56,6 +58,8 @@ function AdminUpload() {
   const [busy, setBusy] = useState<string | null>(null);
   const [previewFor, setPreviewFor] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [videoTitle, setVideoTitle] = useState("");
+  const [videoUrl, setVideoUrl] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const existing = useMemo(
@@ -103,6 +107,41 @@ function AdminUpload() {
       await refreshDocs();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Error subiendo el archivo.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onAddVideoOnly() {
+    if (!subjectId || !weekId) {
+      toast.error("Elige materia y semana primero.");
+      return;
+    }
+    if (atLimit) {
+      toast.error(`Ya hay ${MAX_DOCUMENTS_PER_WEEK} documentos en esta semana, el máximo.`);
+      return;
+    }
+    const id = extractYoutubeId(videoUrl);
+    if (!id) {
+      toast.error("No reconozco ese link o ID de YouTube.");
+      return;
+    }
+    try {
+      setBusy("Agregando video…");
+      const weekContentId = existing?.id ?? (await ensureWeekContent(subjectId, weekId));
+      await addVideoOnlyDocument({
+        week_content_id: weekContentId,
+        title: videoTitle.trim() || "Video",
+        video_id: id,
+        video_title: videoTitle.trim() || null,
+        order: docs.length,
+      });
+      setVideoTitle("");
+      setVideoUrl("");
+      toast.success("Video agregado como documento nuevo.");
+      await refreshDocs();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo agregar el video.");
     } finally {
       setBusy(null);
     }
@@ -222,15 +261,17 @@ function AdminUpload() {
                         className="flex-1"
                       />
                       <span className="whitespace-nowrap text-xs text-muted-foreground">
-                        {d.pdf_filename}
+                        {d.pdf_filename ?? "Solo video"}
                       </span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => onTogglePreview(d.id, d.pdf_url)}
-                      >
-                        {previewFor === d.id ? "Ocultar" : "Ver"}
-                      </Button>
+                      {d.pdf_url && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => onTogglePreview(d.id, d.pdf_url)}
+                        >
+                          {previewFor === d.id ? "Ocultar" : "Ver"}
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon"
@@ -242,7 +283,7 @@ function AdminUpload() {
                     </div>
                     {d.youtube_links && d.youtube_links.length > 0 && (
                       <p className="mt-2 text-xs text-muted-foreground">
-                        {d.youtube_links.length} video(s) detectado(s) en este documento.
+                        {d.youtube_links.length} video(s) en este documento.
                       </p>
                     )}
                     {previewFor === d.id && (
@@ -299,6 +340,34 @@ function AdminUpload() {
                 disabled={atLimit}
                 onChange={(e) => handleFile(e.target.files?.[0])}
               />
+            </div>
+          </section>
+
+          <section className="mt-6">
+            <Label className="mb-2 block">Agregar solo un video (sin PDF)</Label>
+            <div className="flex flex-col gap-2 rounded-lg border p-4 sm:flex-row">
+              <Input
+                value={videoTitle}
+                placeholder="Título del video (opcional)"
+                disabled={atLimit}
+                onChange={(e) => setVideoTitle(e.target.value)}
+                className="sm:w-1/3"
+              />
+              <Input
+                value={videoUrl}
+                placeholder="Link o ID de YouTube"
+                disabled={atLimit}
+                onChange={(e) => setVideoUrl(e.target.value)}
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={atLimit || !!busy}
+                onClick={onAddVideoOnly}
+              >
+                <Youtube className="size-4" /> Agregar video
+              </Button>
             </div>
           </section>
         </>
