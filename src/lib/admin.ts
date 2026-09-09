@@ -56,7 +56,7 @@ export type AdminContentRow = {
   youtube_links: YoutubeLink[] | null;
 };
 
-export const MAX_DOCUMENTS_PER_WEEK = 5;
+export const MAX_DOCUMENTS_PER_WEEK = 20;
 
 export const allContentQuery = {
   queryKey: ["admin", "week_content"],
