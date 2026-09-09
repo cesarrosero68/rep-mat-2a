@@ -206,9 +206,56 @@ export async function addVideoToDocument(
   if (error) throw error;
 }
 
+/** Reemplaza el título y/o el video_id de un video ya guardado dentro de un documento. */
+export async function updateVideoInDocument(
+  documentId: string,
+  currentLinks: YoutubeLink[],
+  index: number,
+  updates: { title?: string | null; video_id?: string },
+) {
+  const links = currentLinks.map((l, i) => (i === index ? { ...l, ...updates } : l));
+  const { error } = await supabase
+    .from("week_documents")
+    .update({ youtube_links: links })
+    .eq("id", documentId);
+  if (error) throw error;
+}
+
+/** Quita un video de un documento (sin borrar el documento entero). */
+export async function removeVideoFromDocument(
+  documentId: string,
+  currentLinks: YoutubeLink[],
+  index: number,
+) {
+  const links = currentLinks.filter((_, i) => i !== index);
+  const { error } = await supabase
+    .from("week_documents")
+    .update({ youtube_links: links })
+    .eq("id", documentId);
+  if (error) throw error;
+}
+
 export async function updateWeekDocumentTitle(id: string, title: string) {
   const { error } = await supabase.from("week_documents").update({ title }).eq("id", id);
   if (error) throw error;
+}
+
+/** Cambia la URL de un documento tipo "actividad embebida" ya guardado. */
+export async function updateEmbedUrl(id: string, embed_url: string) {
+  const { error } = await supabase.from("week_documents").update({ embed_url }).eq("id", id);
+  if (error) throw error;
+}
+
+/** Actualiza el campo `order` de varios documentos a la vez, para reordenar las pestañas. */
+export async function reorderDocuments(ids: string[]) {
+  await Promise.all(
+    ids.map((id, i) =>
+      supabase
+        .from("week_documents")
+        .update({ order: i + 1 })
+        .eq("id", id),
+    ),
+  );
 }
 
 export async function deleteWeekDocument(id: string) {
