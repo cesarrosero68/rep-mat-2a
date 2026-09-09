@@ -89,7 +89,7 @@ export const adminWeekDocumentsQuery = (weekContentId: string | undefined) => ({
     if (!weekContentId) return [];
     const { data, error } = await supabase
       .from("week_documents")
-      .select("id,week_content_id,title,pdf_url,pdf_filename,youtube_links,order")
+      .select("id,week_content_id,title,pdf_url,pdf_filename,embed_url,youtube_links,order")
       .eq("week_content_id", weekContentId)
       .order("order");
     if (error) throw error;
@@ -123,6 +123,7 @@ export async function addWeekDocument(input: {
   title: string;
   pdf_url?: string | null;
   pdf_filename?: string | null;
+  embed_url?: string | null;
   youtube_links: YoutubeLink[];
   order: number;
 }) {
@@ -144,6 +145,44 @@ export async function addVideoOnlyDocument(input: {
     pdf_url: null,
     pdf_filename: null,
     youtube_links: [{ video_id: input.video_id, title: input.video_title, position_in_doc: 1 }],
+    order: input.order,
+  });
+}
+
+/** Dominios cuya URL de embed conocemos, para validar antes de guardar y evitar iframes rotos. */
+const ALLOWED_EMBED_HOSTS = [
+  "wordwall.net",
+  "view.genially.com",
+  "genially.com",
+  "kahoot.it",
+  "quizizz.com",
+];
+
+export function isAllowedEmbedUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "https:") return false;
+    return ALLOWED_EMBED_HOSTS.some((h) => u.hostname === h || u.hostname.endsWith(`.${h}`));
+  } catch {
+    return false;
+  }
+}
+
+/** Agrega un documento que es un juego/actividad interactiva embebida (Wordwall, Genially, etc.),
+ *  sin PDF ni video — se muestra dentro de un iframe. */
+export async function addEmbedDocument(input: {
+  week_content_id: string;
+  title: string;
+  embed_url: string;
+  order: number;
+}) {
+  await addWeekDocument({
+    week_content_id: input.week_content_id,
+    title: input.title,
+    pdf_url: null,
+    pdf_filename: null,
+    embed_url: input.embed_url,
+    youtube_links: [],
     order: input.order,
   });
 }
