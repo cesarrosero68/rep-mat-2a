@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { periodsQuery, subjectsQuery, weeksQuery } from "@/lib/school";
-import { allContentQuery } from "@/lib/admin";
+import { allContentQuery, allDocumentCountsQuery } from "@/lib/admin";
 
 export const Route = createFileRoute("/_authenticated/admin/")({
   head: () => ({
@@ -29,11 +29,18 @@ function AdminOverview() {
   const periods = useQuery(periodsQuery);
   const weeks = useQuery(weeksQuery);
   const content = useQuery(allContentQuery);
+  const docCounts = useQuery(allDocumentCountsQuery);
 
   const subjectList = subjects.data ?? [];
   const periodList = periodsQuery && (periods.data ?? []);
   const weekList = weeks.data ?? [];
-  const loaded = new Set((content.data ?? []).map((c) => `${c.subject_id}|${c.week_id}`));
+  const counts = docCounts.data ?? {};
+  // Una celda cuenta como cargada si su week_content tiene al menos un documento.
+  const loaded = new Set(
+    (content.data ?? [])
+      .filter((c) => (counts[c.id] ?? 0) > 0)
+      .map((c) => `${c.subject_id}|${c.week_id}`),
+  );
   const total = subjectList.length * weekList.length;
 
   return (
