@@ -145,29 +145,49 @@ export async function uploadPdf(file: File, subjectName: string) {
   return path;
 }
 
+const PROCESS_PDF_TIMEOUT_MS = 30_000;
+
 /** Llama a la Function de procesamiento (misma que se puede invocar por HTTP/SQL). */
 export async function processPdf(path: string) {
   const { data } = await supabase.auth.getSession();
-  const res = await fetch("/api/public/procesar-pdf", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(data.session?.access_token
-        ? { Authorization: `Bearer ${data.session.access_token}` }
-        : {}),
-    },
-    body: JSON.stringify({ path }),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PROCESS_PDF_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch("/api/public/procesar-pdf", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(data.session?.access_token
+          ? { Authorization: `Bearer ${data.session.access_token}` }
+          : {}),
+      },
+      body: JSON.stringify({ path }),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") {
+      throw new Error(
+        "El PDF es muy grande o tardó demasiado en procesarse. El archivo ya quedó subido: agrega el video manualmente si lo necesitas.",
+      );
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
   const json = (await res.json()) as {
     youtube_links?: YoutubeLink[];
     extracted_text_length?: number;
     error?: string;
+    skipped_too_large?: boolean;
   };
   if (!res.ok) throw new Error(json.error ?? "Error procesando el PDF");
   return json;
 }
 
-/** Sube y procesa un PDF, y lo agrega como un documento nuevo de la semana (no reemplaza los existentes). */
+/** Sube y procesa un PDF, y lo agrega como un documento nuevo de la semana (no reemplaza los existentes).
+ *  Si el procesamiento automático falla o tarda demasiado, el documento igual queda guardado sin videos
+ *  detectados — el admin puede agregarlos a mano después. */
 export async function uploadAndAddDocument(
   file: File,
   subjectName: string,
@@ -176,7 +196,17 @@ export async function uploadAndAddDocument(
   currentCount: number,
 ) {
   const path = await uploadPdf(file, subjectName);
-  const result = await processPdf(path);
+  let result: {
+    youtube_links?: YoutubeLink[];
+    extracted_text_length?: number;
+    skipped_too_large?: boolean;
+  } = {};
+  let processingError: string | null = null;
+  try {
+    result = await processPdf(path);
+  } catch (e) {
+    processingError = e instanceof Error ? e.message : "No se pudo procesar el PDF.";
+  }
   await addWeekDocument({
     week_content_id: weekContentId,
     title,
@@ -185,7 +215,7 @@ export async function uploadAndAddDocument(
     youtube_links: (result.youtube_links ?? []) as YoutubeLink[],
     order: currentCount + 1,
   });
-  return result;
+  return { ...result, processingError };
 }
 
 export async function saveWeekContent(input: {
