@@ -1,20 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Plus, Trash2, UploadCloud } from "lucide-react";
+import { ArrowLeft, Loader2, Trash2, UploadCloud } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import PdfViewer from "@/components/PdfViewer";
+import { periodsQuery, resolvePdfUrl, subjectsQuery, weeksQuery } from "@/lib/school";
 import {
-  periodsQuery,
-  resolvePdfUrl,
-  subjectsQuery,
-  weeksQuery,
-  type YoutubeLink,
-} from "@/lib/school";
-import { allContentQuery, processPdf, saveWeekContent, uploadPdf } from "@/lib/admin";
+  adminWeekDocumentsQuery,
+  allContentQuery,
+  deleteWeekDocument,
+  ensureWeekContent,
+  MAX_DOCUMENTS_PER_WEEK,
+  updateWeekDocumentTitle,
+  uploadAndAddDocument,
+} from "@/lib/admin";
 
 type Search = { subject?: string | undefined; week?: string | undefined };
 
@@ -28,12 +30,12 @@ export const Route = createFileRoute("/_authenticated/admin/cargar")({
       { title: "Cargar contenido — Administración" },
       {
         name: "description",
-        content: "Sube el PDF de una materia y semana y revisa sus videos.",
+        content: "Sube los documentos de una materia y semana y revisa sus videos.",
       },
       { property: "og:title", content: "Cargar contenido — Administración" },
       {
         property: "og:description",
-        content: "Sube el PDF de una materia y semana y revisa sus videos.",
+        content: "Sube los documentos de una materia y semana y revisa sus videos.",
       },
     ],
   }),
@@ -51,11 +53,9 @@ function AdminUpload() {
 
   const [subjectId, setSubjectId] = useState(search.subject ?? "");
   const [weekId, setWeekId] = useState(search.week ?? "");
-  const [pdfPath, setPdfPath] = useState<string | null>(null);
-  const [pdfName, setPdfName] = useState<string | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [links, setLinks] = useState<YoutubeLink[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  const [previewFor, setPreviewFor] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const existing = useMemo(
@@ -63,22 +63,15 @@ function AdminUpload() {
     [content.data, subjectId, weekId],
   );
 
-  useEffect(() => {
-    setPdfPath(existing?.pdf_url ?? null);
-    setPdfName(existing?.pdf_filename ?? null);
-    setLinks(existing?.youtube_links ?? []);
-  }, [subjectId, weekId, existing]);
+  const documents = useQuery(adminWeekDocumentsQuery(existing?.id));
+  const docs = documents.data ?? [];
+  const atLimit = docs.length >= MAX_DOCUMENTS_PER_WEEK;
 
-  useEffect(() => {
-    let alive = true;
-    setPreviewUrl(null);
-    if (pdfPath) {
-      resolvePdfUrl(pdfPath).then((u) => alive && setPreviewUrl(u));
-    }
-    return () => {
-      alive = false;
-    };
-  }, [pdfPath]);
+  async function refreshDocs() {
+    await qc.invalidateQueries({ queryKey: ["admin", "week_documents"] });
+    await qc.invalidateQueries({ queryKey: ["admin", "week_content"] });
+    await qc.invalidateQueries({ queryKey: ["admin", "week_documents_counts"] });
+  }
 
   async function handleFile(file: File | undefined) {
     if (!file) return;
@@ -86,16 +79,28 @@ function AdminUpload() {
       toast.error("Elige materia y semana primero.");
       return;
     }
+    if (atLimit) {
+      toast.error(`Ya hay ${MAX_DOCUMENTS_PER_WEEK} documentos en esta semana, el máximo.`);
+      return;
+    }
     const subject = subjects.data?.find((s) => s.id === subjectId);
     try {
-      setBusy("Subiendo el PDF…");
-      const path = await uploadPdf(file, subject?.name ?? "general");
-      setPdfPath(path);
-      setPdfName(file.name);
+      setBusy("Preparando…");
+      const weekContentId = existing?.id ?? (await ensureWeekContent(subjectId, weekId));
+      setBusy("Subiendo el documento…");
+      const title = file.name.replace(/\.pdf$/i, "").slice(0, 60) || "Documento";
       setBusy("Leyendo el PDF y buscando videos…");
-      const result = await processPdf(path);
-      setLinks(result.youtube_links ?? []);
-      toast.success(`${result.youtube_links?.length ?? 0} video(s) detectado(s).`);
+      const result = await uploadAndAddDocument(
+        file,
+        subject?.name ?? "general",
+        weekContentId,
+        title,
+        docs.length,
+      );
+      toast.success(
+        `Documento agregado. ${result.youtube_links?.length ?? 0} video(s) detectado(s).`,
+      );
+      await refreshDocs();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Error subiendo el archivo.");
     } finally {
@@ -103,28 +108,41 @@ function AdminUpload() {
     }
   }
 
-  async function onSave() {
-    if (!subjectId || !weekId) {
-      toast.error("Elige materia y semana.");
+  async function onDeleteDoc(id: string) {
+    if (!confirm("¿Eliminar este documento? Esta acción no se puede deshacer.")) return;
+    try {
+      await deleteWeekDocument(id);
+      if (previewFor === id) {
+        setPreviewFor(null);
+        setPreviewUrl(null);
+      }
+      await refreshDocs();
+      toast.success("Documento eliminado.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo eliminar.");
+    }
+  }
+
+  async function onRenameDoc(id: string, title: string) {
+    try {
+      await updateWeekDocumentTitle(id, title);
+      await refreshDocs();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo renombrar.");
+    }
+  }
+
+  async function onTogglePreview(id: string, pdfUrl: string | null) {
+    if (previewFor === id) {
+      setPreviewFor(null);
+      setPreviewUrl(null);
       return;
     }
-    if (existing && !confirm("Esta semana ya tiene contenido, se va a reemplazar.")) return;
-    try {
-      setBusy("Guardando…");
-      await saveWeekContent({
-        subject_id: subjectId,
-        week_id: weekId,
-        pdf_url: pdfPath,
-        pdf_filename: pdfName,
-        youtube_links: links.map((l, i) => ({ ...l, position_in_doc: i + 1 })),
-      });
-      await qc.invalidateQueries({ queryKey: ["admin", "week_content"] });
-      toast.success("Contenido guardado.");
-      navigate({ to: "/admin" });
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "No se pudo guardar.");
-    } finally {
-      setBusy(null);
+    setPreviewFor(id);
+    setPreviewUrl(null);
+    if (pdfUrl) {
+      const url = await resolvePdfUrl(pdfUrl);
+      setPreviewUrl(url);
     }
   }
 
@@ -179,133 +197,115 @@ function AdminUpload() {
         </div>
       </div>
 
-      {existing && (
-        <p className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Esta semana ya tiene contenido cargado
-          {existing.pdf_filename ? ` (${existing.pdf_filename})` : ""}. Al guardar se reemplazará.
-        </p>
-      )}
+      {subjectId && weekId && (
+        <>
+          <section className="mt-8">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold">
+                Documentos de esta semana ({docs.length}/{MAX_DOCUMENTS_PER_WEEK})
+              </h2>
+            </div>
 
-      <section className="mt-6">
-        <Label className="mb-2 block">Archivo PDF</Label>
-        <div
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            handleFile(e.dataTransfer.files?.[0]);
-          }}
-          onClick={() => fileRef.current?.click()}
-          className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed p-8 text-center text-sm text-muted-foreground hover:bg-accent/40"
-        >
-          {busy ? (
-            <>
-              <Loader2 className="size-6 animate-spin" />
-              {busy}
-            </>
-          ) : (
-            <>
-              <UploadCloud className="size-6" />
-              Arrastra el PDF aquí o haz clic para elegirlo
-              {pdfName && <span className="font-medium text-foreground">{pdfName}</span>}
-            </>
-          )}
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/pdf"
-            className="hidden"
-            onChange={(e) => handleFile(e.target.files?.[0])}
-          />
-        </div>
-      </section>
+            {docs.length === 0 ? (
+              <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                Todavía no hay documentos en esta semana. Agrega el primero abajo.
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {docs.map((d) => (
+                  <li key={d.id} className="rounded-lg border p-3">
+                    <div className="flex items-center gap-3">
+                      <Input
+                        value={d.title}
+                        placeholder="Título del documento (ej. Guía, Actividades)"
+                        onChange={(e) => onRenameDoc(d.id, e.target.value)}
+                        className="flex-1"
+                      />
+                      <span className="whitespace-nowrap text-xs text-muted-foreground">
+                        {d.pdf_filename}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onTogglePreview(d.id, d.pdf_url)}
+                      >
+                        {previewFor === d.id ? "Ocultar" : "Ver"}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Eliminar documento"
+                        onClick={() => onDeleteDoc(d.id)}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
+                    {d.youtube_links && d.youtube_links.length > 0 && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {d.youtube_links.length} video(s) detectado(s) en este documento.
+                      </p>
+                    )}
+                    {previewFor === d.id && (
+                      <div className="mt-3">
+                        {previewUrl ? (
+                          <PdfViewer url={previewUrl} />
+                        ) : (
+                          <div className="flex h-40 items-center justify-center rounded-lg bg-muted">
+                            <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
 
-      {previewUrl && (
-        <section className="mt-6">
-          <h2 className="mb-2 text-sm font-semibold">Vista previa</h2>
-          <PdfViewer url={previewUrl} />
-        </section>
-      )}
-
-      <section className="mt-8">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Videos detectados ({links.length})</h2>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() =>
-              setLinks((l) => [...l, { video_id: "", title: "", position_in_doc: l.length + 1 }])
-            }
-          >
-            <Plus className="size-4" /> Agregar video
-          </Button>
-        </div>
-        <ul className="space-y-3">
-          {links.map((l, i) => (
-            <li key={i} className="flex items-center gap-3 rounded-lg border p-3">
-              {l.video_id ? (
-                <img
-                  src={`https://img.youtube.com/vi/${l.video_id}/default.jpg`}
-                  alt={l.title ?? "Miniatura del video"}
-                  className="h-12 w-20 rounded object-cover"
-                />
+          <section className="mt-6">
+            <Label className="mb-2 block">
+              {atLimit ? "Límite de documentos alcanzado" : "Agregar documento"}
+            </Label>
+            <div
+              onDragOver={(e) => !atLimit && e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (!atLimit) handleFile(e.dataTransfer.files?.[0]);
+              }}
+              onClick={() => !atLimit && fileRef.current?.click()}
+              aria-disabled={atLimit}
+              className={`flex flex-col items-center gap-2 rounded-lg border-2 border-dashed p-8 text-center text-sm text-muted-foreground ${
+                atLimit ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-accent/40"
+              }`}
+            >
+              {busy ? (
+                <>
+                  <Loader2 className="size-6 animate-spin" />
+                  {busy}
+                </>
               ) : (
-                <span className="h-12 w-20 rounded bg-muted" />
+                <>
+                  <UploadCloud className="size-6" />
+                  {atLimit
+                    ? `Ya hay ${MAX_DOCUMENTS_PER_WEEK} documentos, el máximo por semana`
+                    : "Arrastra el PDF aquí o haz clic para elegirlo"}
+                </>
               )}
-              <div className="grid flex-1 gap-2 sm:grid-cols-[1fr_180px]">
-                <Input
-                  value={l.title ?? ""}
-                  placeholder="Título del video"
-                  onChange={(e) =>
-                    setLinks((arr) =>
-                      arr.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)),
-                    )
-                  }
-                />
-                <Input
-                  value={l.video_id}
-                  placeholder="ID de YouTube"
-                  onChange={(e) =>
-                    setLinks((arr) =>
-                      arr.map((x, j) =>
-                        j === i
-                          ? {
-                              ...x,
-                              video_id:
-                                e.target.value.match(
-                                  /(?:v=|youtu\.be\/|embed\/|shorts\/)([A-Za-z0-9_-]{11})/,
-                                )?.[1] ?? e.target.value.trim(),
-                            }
-                          : x,
-                      ),
-                    )
-                  }
-                />
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Eliminar video"
-                onClick={() => setLinks((arr) => arr.filter((_, j) => j !== i))}
-              >
-                <Trash2 className="size-4" />
-              </Button>
-            </li>
-          ))}
-          {links.length === 0 && (
-            <li className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-              Todavía no hay videos. Se detectan al subir el PDF, o agrégalos a mano.
-            </li>
-          )}
-        </ul>
-      </section>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                disabled={atLimit}
+                onChange={(e) => handleFile(e.target.files?.[0])}
+              />
+            </div>
+          </section>
+        </>
+      )}
 
       <div className="mt-8 flex justify-end gap-2">
-        <Button variant="outline" asChild>
-          <Link to="/admin">Cancelar</Link>
-        </Button>
-        <Button onClick={onSave} disabled={!!busy}>
-          Guardar
-        </Button>
+        <Button onClick={() => navigate({ to: "/admin" })}>Listo</Button>
       </div>
     </main>
   );
