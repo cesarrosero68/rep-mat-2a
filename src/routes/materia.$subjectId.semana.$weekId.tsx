@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, Check, Loader2, PartyPopper } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ExternalLink, Loader2, PartyPopper } from "lucide-react";
 import { VideoGrid } from "@/components/VideoGrid";
 import {
   contentQuery,
@@ -64,6 +64,8 @@ function WeekPage() {
   const [pdfSrc, setPdfSrc] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [cheer, setCheer] = useState(false);
+  const [embedLoaded, setEmbedLoaded] = useState(false);
+  const [embedTimedOut, setEmbedTimedOut] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
@@ -93,6 +95,15 @@ function WeekPage() {
       alive = false;
     };
   }, [activePdfUrl]);
+
+  const EMBED_TIMEOUT_MS = 6000;
+  useEffect(() => {
+    setEmbedLoaded(false);
+    setEmbedTimedOut(false);
+    if (!activeEmbedUrl) return;
+    const timer = setTimeout(() => setEmbedTimedOut(true), EMBED_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [activeEmbedUrl]);
 
   const toggle = useMutation({
     mutationFn: async () => {
@@ -148,14 +159,35 @@ function WeekPage() {
 
       <section className="mt-6">
         {activeEmbedUrl ? (
-          <div className="overflow-hidden rounded-3xl border-4" style={{ borderColor: color }}>
-            <iframe
-              src={activeEmbedUrl}
-              title={activeDoc?.title ?? "Actividad interactiva"}
-              className="aspect-[4/3] w-full sm:aspect-video"
-              allow="fullscreen *"
-              allowFullScreen
-            />
+          <div>
+            <div className="overflow-hidden rounded-3xl border-4" style={{ borderColor: color }}>
+              <iframe
+                key={activeEmbedUrl}
+                src={activeEmbedUrl}
+                title={activeDoc?.title ?? "Actividad interactiva"}
+                className="aspect-[4/3] w-full sm:aspect-video"
+                allow="fullscreen *"
+                allowFullScreen
+                onLoad={() => setEmbedLoaded(true)}
+              />
+            </div>
+            {!embedLoaded && embedTimedOut && (
+              <div className="mt-4 rounded-2xl border-2 border-dashed border-border p-5 text-center">
+                <p className="mb-3 text-sm text-muted-foreground">
+                  Esta actividad está tardando en cargar aquí. Puede que este sitio no permita
+                  mostrarse dentro de la app — ábrela directamente:
+                </p>
+                <a
+                  href={activeEmbedUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-2 rounded-2xl border-2 px-4 py-2 text-sm font-bold"
+                  style={{ borderColor: color, color }}
+                >
+                  <ExternalLink className="size-4" /> Abrir en otra pestaña
+                </a>
+              </div>
+            )}
           </div>
         ) : activePdfUrl ? (
           pdfSrc && mounted ? (
