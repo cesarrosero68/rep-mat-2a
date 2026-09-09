@@ -16,6 +16,7 @@ import {
   deleteWeekDocument,
   ensureWeekContent,
   extractYoutubeId,
+  imageToPdf,
   MAX_DOCUMENTS_PER_WEEK,
   MAX_UPLOAD_BYTES,
   updateWeekDocumentTitle,
@@ -86,8 +87,8 @@ function AdminUpload() {
     await qc.invalidateQueries({ queryKey: ["admin", "week_documents_counts"] });
   }
 
-  async function handleFile(file: File | undefined) {
-    if (!file) return;
+  async function handleFile(rawFile: File | undefined) {
+    if (!rawFile) return;
     if (!subjectId || !weekId) {
       toast.error("Elige materia y semana primero.");
       return;
@@ -96,10 +97,29 @@ function AdminUpload() {
       toast.error(`Ya hay ${MAX_DOCUMENTS_PER_WEEK} documentos en esta semana, el máximo.`);
       return;
     }
+    const isImage = rawFile.type.startsWith("image/");
+    if (!isImage && rawFile.type !== "application/pdf") {
+      toast.error("Solo se admiten archivos PDF o imágenes (JPG, PNG, WEBP).");
+      return;
+    }
+
+    let file = rawFile;
+    try {
+      if (isImage) {
+        setBusy("Convirtiendo la imagen a PDF…");
+        file = await imageToPdf(rawFile);
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo convertir la imagen.");
+      setBusy(null);
+      return;
+    }
+
     if (file.size > MAX_UPLOAD_BYTES) {
       toast.error(
-        `El archivo pesa ${(file.size / 1024 / 1024).toFixed(1)}MB. Por ahora el máximo recomendado es ${MAX_UPLOAD_BYTES / 1024 / 1024}MB — comprime el PDF primero.`,
+        `El archivo pesa ${(file.size / 1024 / 1024).toFixed(1)}MB. Por ahora el máximo recomendado es ${MAX_UPLOAD_BYTES / 1024 / 1024}MB — comprímelo primero.`,
       );
+      setBusy(null);
       return;
     }
     const subject = subjects.data?.find((s) => s.id === subjectId);
@@ -107,7 +127,8 @@ function AdminUpload() {
       setBusy("Preparando…");
       const weekContentId = existing?.id ?? (await ensureWeekContent(subjectId, weekId));
       setBusy("Subiendo el documento… (puede tardar un poco con archivos grandes)");
-      const title = file.name.replace(/\.pdf$/i, "").slice(0, 60) || "Documento";
+      const title =
+        rawFile.name.replace(/\.(pdf|jpe?g|png|webp)$/i, "").slice(0, 60) || "Documento";
       const result = await uploadAndAddDocument(
         file,
         subject?.name ?? "general",
@@ -122,6 +143,8 @@ function AdminUpload() {
         toast.warning(
           "Documento guardado. El PDF es muy pesado para detectar videos automáticamente — agrégalos a mano si tiene alguno.",
         );
+      } else if (isImage) {
+        toast.success("Imagen agregada como documento (convertida a PDF).");
       } else {
         toast.success(
           `Documento agregado. ${result.youtube_links?.length ?? 0} video(s) detectado(s).`,
@@ -363,10 +386,11 @@ function AdminUpload() {
                   <UploadCloud className="size-6" />
                   {atLimit
                     ? `Ya hay ${MAX_DOCUMENTS_PER_WEEK} documentos, el máximo por semana`
-                    : "Arrastra el PDF aquí o haz clic para elegirlo"}
+                    : "Arrastra un PDF o una imagen aquí, o haz clic para elegirlo"}
                   {!atLimit && (
                     <span className="text-xs text-muted-foreground">
-                      Máximo recomendado: {MAX_UPLOAD_BYTES / 1024 / 1024}MB por archivo
+                      PDF, JPG, PNG o WEBP — máximo recomendado: {MAX_UPLOAD_BYTES / 1024 / 1024}MB
+                      por archivo
                     </span>
                   )}
                 </>
@@ -374,7 +398,7 @@ function AdminUpload() {
               <input
                 ref={fileRef}
                 type="file"
-                accept="application/pdf"
+                accept="application/pdf,image/jpeg,image/png,image/webp"
                 className="hidden"
                 disabled={atLimit}
                 onChange={(e) => handleFile(e.target.files?.[0])}
