@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Loader2, Trash2, UploadCloud, Youtube } from "lucide-react";
@@ -10,6 +10,7 @@ import PdfViewer from "@/components/PdfViewer";
 import { periodsQuery, resolvePdfUrl, subjectsQuery, weeksQuery } from "@/lib/school";
 import {
   addVideoOnlyDocument,
+  addVideoToDocument,
   adminWeekDocumentsQuery,
   allContentQuery,
   deleteWeekDocument,
@@ -60,6 +61,7 @@ function AdminUpload() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [videoTitle, setVideoTitle] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
+  const [videoTargetId, setVideoTargetId] = useState<string>("__new__");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const existing = useMemo(
@@ -70,6 +72,12 @@ function AdminUpload() {
   const documents = useQuery(adminWeekDocumentsQuery(existing?.id));
   const docs = documents.data ?? [];
   const atLimit = docs.length >= MAX_DOCUMENTS_PER_WEEK;
+  const firstDocId = docs[0]?.id ?? null;
+
+  // Por defecto, sugiere agregar el video al primer documento (normalmente el PDF principal).
+  useEffect(() => {
+    setVideoTargetId(firstDocId ?? "__new__");
+  }, [firstDocId]);
 
   async function refreshDocs() {
     await qc.invalidateQueries({ queryKey: ["admin", "week_documents"] });
@@ -112,13 +120,9 @@ function AdminUpload() {
     }
   }
 
-  async function onAddVideoOnly() {
+  async function onAddVideo() {
     if (!subjectId || !weekId) {
       toast.error("Elige materia y semana primero.");
-      return;
-    }
-    if (atLimit) {
-      toast.error(`Ya hay ${MAX_DOCUMENTS_PER_WEEK} documentos en esta semana, el máximo.`);
       return;
     }
     const id = extractYoutubeId(videoUrl);
@@ -128,17 +132,32 @@ function AdminUpload() {
     }
     try {
       setBusy("Agregando video…");
-      const weekContentId = existing?.id ?? (await ensureWeekContent(subjectId, weekId));
-      await addVideoOnlyDocument({
-        week_content_id: weekContentId,
-        title: videoTitle.trim() || "Video",
-        video_id: id,
-        video_title: videoTitle.trim() || null,
-        order: docs.length,
-      });
+      if (videoTargetId === "__new__") {
+        if (atLimit) {
+          toast.error(`Ya hay ${MAX_DOCUMENTS_PER_WEEK} documentos en esta semana, el máximo.`);
+          return;
+        }
+        const weekContentId = existing?.id ?? (await ensureWeekContent(subjectId, weekId));
+        await addVideoOnlyDocument({
+          week_content_id: weekContentId,
+          title: videoTitle.trim() || "Video",
+          video_id: id,
+          video_title: videoTitle.trim() || null,
+          order: docs.length,
+        });
+        toast.success("Video agregado como documento nuevo.");
+      } else {
+        const target = docs.find((d) => d.id === videoTargetId);
+        await addVideoToDocument(
+          videoTargetId,
+          target?.youtube_links ?? [],
+          id,
+          videoTitle.trim() || null,
+        );
+        toast.success(`Video agregado a "${target?.title ?? "documento"}".`);
+      }
       setVideoTitle("");
       setVideoUrl("");
-      toast.success("Video agregado como documento nuevo.");
       await refreshDocs();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "No se pudo agregar el video.");
@@ -344,30 +363,49 @@ function AdminUpload() {
           </section>
 
           <section className="mt-6">
-            <Label className="mb-2 block">Agregar solo un video (sin PDF)</Label>
-            <div className="flex flex-col gap-2 rounded-lg border p-4 sm:flex-row">
-              <Input
-                value={videoTitle}
-                placeholder="Título del video (opcional)"
-                disabled={atLimit}
-                onChange={(e) => setVideoTitle(e.target.value)}
-                className="sm:w-1/3"
-              />
-              <Input
-                value={videoUrl}
-                placeholder="Link o ID de YouTube"
-                disabled={atLimit}
-                onChange={(e) => setVideoUrl(e.target.value)}
-                className="flex-1"
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={atLimit || !!busy}
-                onClick={onAddVideoOnly}
-              >
-                <Youtube className="size-4" /> Agregar video
-              </Button>
+            <Label className="mb-2 block">Agregar un video</Label>
+            <div className="space-y-2 rounded-lg border p-4">
+              <div className="grid gap-2 sm:grid-cols-[220px_1fr]">
+                <select
+                  className="h-10 rounded-md border bg-background px-3 text-sm"
+                  value={videoTargetId}
+                  onChange={(e) => setVideoTargetId(e.target.value)}
+                >
+                  {docs.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      Agregar a: {d.title}
+                    </option>
+                  ))}
+                  <option value="__new__" disabled={atLimit}>
+                    {atLimit ? "Límite de documentos alcanzado" : "Nuevo documento (solo video)"}
+                  </option>
+                </select>
+                <Input
+                  value={videoUrl}
+                  placeholder="Link o ID de YouTube"
+                  onChange={(e) => setVideoUrl(e.target.value)}
+                />
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  value={videoTitle}
+                  placeholder={
+                    videoTargetId === "__new__"
+                      ? "Título del video (se usará como título del documento)"
+                      : "Título del video (opcional)"
+                  }
+                  onChange={(e) => setVideoTitle(e.target.value)}
+                  className="flex-1"
+                />
+                <Button type="button" variant="secondary" disabled={!!busy} onClick={onAddVideo}>
+                  <Youtube className="size-4" /> Agregar
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {docs.length > 0
+                  ? "Elige a qué documento pertenece este video para que se vea junto a su PDF, o crea uno nuevo si es un video suelto."
+                  : "Todavía no hay documentos en esta semana, así que el video se guardará como un documento nuevo."}
+              </p>
             </div>
           </section>
         </>
