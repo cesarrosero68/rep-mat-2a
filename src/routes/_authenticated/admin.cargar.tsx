@@ -16,12 +16,12 @@ import {
 } from "@/lib/school";
 import { allContentQuery, processPdf, saveWeekContent, uploadPdf } from "@/lib/admin";
 
-type Search = { subject?: string; week?: string };
+type Search = { subject?: string | undefined; week?: string | undefined };
 
 export const Route = createFileRoute("/_authenticated/admin/cargar")({
   validateSearch: (s: Record<string, unknown>): Search => ({
-    subject: typeof s['subject'] === "string" ? s['subject'] : undefined,
-    week: typeof s['week'] === "string" ? s['week'] : undefined,
+    subject: typeof s["subject"] === "string" ? s["subject"] : undefined,
+    week: typeof s["week"] === "string" ? s["week"] : undefined,
   }),
   head: () => ({
     meta: [
@@ -59,10 +59,7 @@ function AdminUpload() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const existing = useMemo(
-    () =>
-      (content.data ?? []).find(
-        (c) => c.subject_id === subjectId && c.week_id === weekId,
-      ),
+    () => (content.data ?? []).find((c) => c.subject_id === subjectId && c.week_id === weekId),
     [content.data, subjectId, weekId],
   );
 
@@ -70,7 +67,7 @@ function AdminUpload() {
     setPdfPath(existing?.pdf_url ?? null);
     setPdfName(existing?.pdf_filename ?? null);
     setLinks(existing?.youtube_links ?? []);
-  }, [existing?.id]);
+  }, [subjectId, weekId, existing]);
 
   useEffect(() => {
     let alive = true;
@@ -85,7 +82,10 @@ function AdminUpload() {
 
   async function handleFile(file: File | undefined) {
     if (!file) return;
-    if (!subjectId || !weekId) return toast.error("Elige materia y semana primero.");
+    if (!subjectId || !weekId) {
+      toast.error("Elige materia y semana primero.");
+      return;
+    }
     const subject = subjects.data?.find((s) => s.id === subjectId);
     try {
       setBusy("Subiendo el PDF…");
@@ -104,7 +104,10 @@ function AdminUpload() {
   }
 
   async function onSave() {
-    if (!subjectId || !weekId) return toast.error("Elige materia y semana.");
+    if (!subjectId || !weekId) {
+      toast.error("Elige materia y semana.");
+      return;
+    }
     if (existing && !confirm("Esta semana ya tiene contenido, se va a reemplazar.")) return;
     try {
       setBusy("Guardando…");
@@ -178,7 +181,8 @@ function AdminUpload() {
 
       {existing && (
         <p className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Esta semana ya tiene contenido cargado{existing.pdf_filename ? ` (${existing.pdf_filename})` : ""}. Al guardar se reemplazará.
+          Esta semana ya tiene contenido cargado
+          {existing.pdf_filename ? ` (${existing.pdf_filename})` : ""}. Al guardar se reemplazará.
         </p>
       )}
 
@@ -229,10 +233,7 @@ function AdminUpload() {
             variant="secondary"
             size="sm"
             onClick={() =>
-              setLinks((l) => [
-                ...l,
-                { video_id: "", title: "", position_in_doc: l.length + 1 },
-              ])
+              setLinks((l) => [...l, { video_id: "", title: "", position_in_doc: l.length + 1 }])
             }
           >
             <Plus className="size-4" /> Agregar video
