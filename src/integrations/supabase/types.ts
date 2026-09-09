@@ -152,6 +152,7 @@ export type Database = {
       week_documents: {
         Row: {
           created_at: string;
+          embed_url: string | null;
           extracted_text: string | null;
           id: string;
           order: number;
@@ -164,6 +165,7 @@ export type Database = {
         };
         Insert: {
           created_at?: string;
+          embed_url?: string | null;
           extracted_text?: string | null;
           id?: string;
           order?: number;
@@ -176,6 +178,7 @@ export type Database = {
         };
         Update: {
           created_at?: string;
+          embed_url?: string | null;
           extracted_text?: string | null;
           id?: string;
           order?: number;
