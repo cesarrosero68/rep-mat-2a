@@ -1,6 +1,52 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { WeekDocument, YoutubeLink } from "@/lib/school";
 
+export const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
+
+/** Convierte una imagen suelta (jpg/png/webp) en un PDF de una sola página,
+ *  del mismo tamaño que la imagen, para poder reutilizar el mismo visor de
+ *  PDF y el mismo flujo de carga que ya existe. Corre en el navegador, sin
+ *  necesitar backend ni servicios externos. */
+export async function imageToPdf(file: File): Promise<File> {
+  const { jsPDF } = await import("jspdf");
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error ?? new Error("No se pudo leer la imagen"));
+    reader.readAsDataURL(file);
+  });
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error("No se pudo abrir la imagen"));
+    el.src = dataUrl;
+  });
+
+  // Convierte a JPEG para mantener el PDF liviano, incluso si el original
+  // era PNG (con pérdida de transparencia, que no aplica a fotos/capturas).
+  const canvas = document.createElement("canvas");
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("No se pudo procesar la imagen en este navegador.");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0);
+  const jpegDataUrl = canvas.toDataURL("image/jpeg", 0.85);
+
+  const widthPt = (img.naturalWidth / 96) * 72;
+  const heightPt = (img.naturalHeight / 96) * 72;
+  const pdf = new jsPDF({
+    orientation: widthPt >= heightPt ? "landscape" : "portrait",
+    unit: "pt",
+    format: [widthPt, heightPt],
+  });
+  pdf.addImage(jpegDataUrl, "JPEG", 0, 0, widthPt, heightPt);
+  const blob = pdf.output("blob");
+  const name = file.name.replace(/\.(jpe?g|png|webp)$/i, "") + ".pdf";
+  return new File([blob], name, { type: "application/pdf" });
+}
+
 export type AdminContentRow = {
   id: string;
   subject_id: string;
